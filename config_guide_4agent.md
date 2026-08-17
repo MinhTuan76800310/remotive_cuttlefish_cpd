@@ -480,12 +480,24 @@ cuttlefish/Dockerfile       # AAOS base + baked APK
 cuttlefish/init.sh          # boot, install APK, launch CPD
 cuttlefish/apks/*.apk
 app/ChildPresentDetection/  # Android sources
+  app/src/main/assets/index.html   # CPD UI (HTML) — see ui_html_to_cuttlefish_guide.md
 docker-compose.yml          # both services
 scripts/build-images.sh
-scripts/deploy-apk.sh
+scripts/deploy-apk.sh       # after any assets/index.html change
 scripts/test-remotive-cpd.sh
+ui_html_to_cuttlefish_guide.md
 .github/workflows/build-images.yml
 ```
+
+---
+
+## Related: change the CPD look from HTML
+
+Visual / markup updates are **not** done via Remotive config. Follow:
+
+→ [`ui_html_to_cuttlefish_guide.md`](ui_html_to_cuttlefish_guide.md)
+
+Summary: edit `app/ChildPresentDetection/app/src/main/assets/index.html` (keep `window.CPD`), then `./scripts/deploy-apk.sh`.
 
 ---
 

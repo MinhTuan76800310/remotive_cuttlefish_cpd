@@ -9,6 +9,7 @@ Run an **Android Automotive (Cuttlefish)** guest with a **Child Present Detectio
 | Bridge config | [`bridge/config.yaml`](bridge/config.yaml) |
 | Compose (2 containers) | [`docker-compose.yml`](docker-compose.yml) |
 | **Agent / automation playbook** | [`config_guide_4agent.md`](config_guide_4agent.md) |
+| **HTML mock → guest UI** | [`ui_html_to_cuttlefish_guide.md`](ui_html_to_cuttlefish_guide.md) |
 
 ---
 
@@ -267,7 +268,9 @@ docker compose up -d
 │   └── test-remotive-cpd.sh     # restbus cycle helper
 ├── docker-compose.yml           # cuttlefish + bridge
 ├── .github/workflows/build-images.yml
-├── cpd_hmi_cluster.html         # HMI reference
+├── cpd_hmi_cluster.html         # HMI reference (browser mock)
+├── ui_html_to_cuttlefish_guide.md  # How to port HTML → assets/index.html
+├── config_guide_4agent.md       # Agent ops playbook
 └── README.md
 ```
 
