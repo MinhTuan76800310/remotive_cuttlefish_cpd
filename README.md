@@ -8,6 +8,7 @@ Run an **Android Automotive (Cuttlefish)** guest with a **Child Present Detectio
 | ADB | `localhost:6520` |
 | Bridge config | [`bridge/config.yaml`](bridge/config.yaml) |
 | Compose (2 containers) | [`docker-compose.yml`](docker-compose.yml) |
+| **Agent / automation playbook** | [`config_guide_4agent.md`](config_guide_4agent.md) |
 
 ---
 
