@@ -1,0 +1,42 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.emtek.cpd'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.emtek.cpd"
+        minSdk 28
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+        multiDexEnabled true
+        multiDexKeepProguard file('multidex-keep.pro')
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+
+    packaging {
+        // Prefer a single classes.dex so AAOS/Cuttlefish can load MainActivity reliably.
+        dex {
+            useLegacyPackaging = false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+}

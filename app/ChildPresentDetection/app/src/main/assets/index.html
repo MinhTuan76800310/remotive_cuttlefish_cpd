@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Child Present Detection</title>
+<style>
+  :root {
+    --bg: #0a0c0f;
+    --panel: #0d1117;
+    --line: #2a313a;
+    --text: #d7dde5;
+    --dim: #6b7683;
+    --amber: #ffb300;
+    --red: #ff3b1f;
+    --red-glow: rgba(255, 59, 31, 0.55);
+    --green: #38d67a;
+    --blue: #3aa7ff;
+    --blink-period: 1s;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Roboto", system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  body {
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  /* Fullscreen cluster (AAOS head unit) */
+  .cluster {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background:
+      radial-gradient(ellipse at 50% 120%, #10151b 0%, var(--panel) 60%),
+      var(--panel);
+    border: 0;
+    border-radius: 0;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.8);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ============ TELLTALE STRIP ============ */
+  .telltales {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: clamp(14px, 3vw, 38px);
+    padding: 18px 20px 10px;
+  }
+
+  .telltale {
+    width: clamp(34px, 4.5vw, 52px);
+    height: clamp(34px, 4.5vw, 52px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.13;
+    filter: grayscale(1);
+    transition: opacity 0.25s, filter 0.25s;
+  }
+  .telltale svg { width: 100%; height: 100%; }
+
+  .telltale.on {
+    opacity: 1;
+    filter: none;
+  }
+  .telltale.on.amber svg { filter: drop-shadow(0 0 8px rgba(255,179,0,0.7)); }
+  .telltale.on.red   svg { filter: drop-shadow(0 0 8px var(--red-glow)); }
+  .telltale.on.green svg { filter: drop-shadow(0 0 8px rgba(56,214,122,0.6)); }
+  .telltale.on.blue  svg { filter: drop-shadow(0 0 8px rgba(58,167,255,0.6)); }
+
+  .telltale.blink { animation: tt-blink var(--blink-period) steps(2, start) infinite; }
+  @keyframes tt-blink { 50% { opacity: 0.13; } }
+
+  /* ============ CENTER GAUGES ============ */
+  .center {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(30px, 6vw, 90px);
+  }
+
+  .gauge-side {
+    text-align: center;
+    color: var(--dim);
+    font-size: clamp(11px, 1.2vw, 14px);
+    letter-spacing: 2px;
+  }
+  .gauge-side .value {
+    font-size: clamp(22px, 3vw, 34px);
+    color: var(--text);
+    font-weight: 600;
+    letter-spacing: 1px;
+  }
+  .gauge-side .bar {
+    width: clamp(90px, 12vw, 150px);
+    height: 6px;
+    background: #1c2229;
+    border-radius: 3px;
+    margin: 8px auto 6px;
+    overflow: hidden;
+  }
+  .gauge-side .bar i {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+  }
+  .bar-fuel i { width: 72%; background: linear-gradient(90deg, #2f9e5f, var(--green)); }
+  .bar-temp i { width: 45%; background: linear-gradient(90deg, #2477c9, var(--blue)); }
+
+  .speed { text-align: center; }
+  .speed .num {
+    font-size: clamp(64px, 10vw, 128px);
+    font-weight: 200;
+    line-height: 1;
+    color: #eef3f8;
+    text-shadow: 0 0 24px rgba(120,180,255,0.25);
+    font-variant-numeric: tabular-nums;
+  }
+  .speed .unit {
+    color: var(--dim);
+    letter-spacing: 4px;
+    font-size: clamp(12px, 1.4vw, 16px);
+    margin-top: 6px;
+  }
+  .speed .gear {
+    margin-top: 10px;
+    color: var(--green);
+    font-weight: 600;
+    font-size: clamp(14px, 1.6vw, 20px);
+    letter-spacing: 6px;
+  }
+
+  /* ============ STATUS FOOTER ============ */
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 28px 16px;
+    color: var(--dim);
+    font-size: clamp(11px, 1.2vw, 14px);
+    letter-spacing: 1px;
+  }
+  .cpd-status { display: flex; align-items: center; gap: 8px; }
+  .cpd-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #333a42;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .cpd-dot.detected { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+  .cpd-dot.escalation {
+    background: var(--red);
+    box-shadow: 0 0 10px var(--red);
+    animation: tt-blink 0.8s steps(2, start) infinite;
+  }
+
+  /* ============ ESCALATION OVERLAY ============ */
+  .escalation {
+    position: absolute;
+    inset: 0;
+    background: #050302;
+    display: none;
+    flex-direction: column;
+    z-index: 50;
+  }
+  .escalation.show { display: flex; }
+
+  .esc-frame {
+    position: absolute;
+    inset: 10px;
+    border: 3px solid var(--red);
+    border-radius: 14px;
+    box-shadow:
+      0 0 18px var(--red-glow),
+      inset 0 0 18px var(--red-glow);
+    clip-path: polygon(
+      0% 6%, 3% 0%, 30% 0%, 33% 3%, 67% 3%, 70% 0%, 97% 0%, 100% 6%,
+      100% 94%, 97% 100%, 70% 100%, 67% 97%, 33% 97%, 30% 100%, 3% 100%, 0% 94%
+    );
+    animation: frame-pulse 1s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes frame-pulse {
+    0%, 100% { box-shadow: 0 0 14px var(--red-glow), inset 0 0 14px var(--red-glow); opacity: 0.9; }
+    50%      { box-shadow: 0 0 34px var(--red-glow), inset 0 0 30px var(--red-glow); opacity: 1; }
+  }
+
+  .esc-led {
+    position: absolute;
+    top: 26px; left: 30px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--red);
+    box-shadow: 0 0 14px var(--red), 0 0 30px var(--red);
+    animation: tt-blink 0.6s steps(2, start) infinite;
+  }
+  .esc-batt {
+    position: absolute;
+    top: 26px; right: 34px;
+    color: var(--red);
+    filter: drop-shadow(0 0 6px var(--red-glow));
+  }
+
+  .hazard {
+    height: 15%;
+    min-height: 44px;
+    margin: 28px 34px 0;
+    background: repeating-linear-gradient(
+      -55deg,
+      var(--red) 0 34px,
+      transparent 34px 58px
+    );
+    filter: drop-shadow(0 0 10px var(--red-glow));
+    animation: hazard-scroll 1.2s linear infinite;
+  }
+  .hazard.bottom { margin: 0 34px 28px; }
+  @keyframes hazard-scroll {
+    from { background-position: 0 0; }
+    to   { background-position: 70px 0; }
+  }
+
+  .esc-body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 6%;
+    position: relative;
+  }
+  .esc-body::before, .esc-body::after {
+    content: "";
+    position: absolute;
+    left: 8%; right: 8%;
+    height: 2px;
+    background: var(--amber);
+    opacity: 0.8;
+  }
+  .esc-body::before { top: 4px; }
+  .esc-body::after  { bottom: 4px; }
+
+  .esc-icon {
+    width: clamp(56px, 8vw, 110px);
+    height: clamp(56px, 8vw, 110px);
+    flex: 0 0 auto;
+    animation: tt-blink 1s steps(2, start) infinite;
+  }
+  .esc-icon svg { width: 100%; height: 100%; filter: drop-shadow(0 0 10px rgba(255,179,0,0.6)); }
+
+  .esc-text {
+    text-align: center;
+    color: var(--amber);
+    font-style: italic;
+    font-weight: 700;
+    font-size: clamp(28px, 5.5vw, 68px);
+    letter-spacing: 3px;
+    line-height: 1.15;
+    text-shadow: 0 0 18px rgba(255,179,0,0.5);
+    text-transform: uppercase;
+    animation: text-pulse 1s ease-in-out infinite;
+  }
+  @keyframes text-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="cluster" id="cluster">
+
+    <div class="telltales">
+      <div class="telltale red" id="tt-seatbelt" title="Seatbelt reminder">
+        <svg viewBox="0 0 48 48" fill="none">
+          <circle cx="24" cy="8" r="5.5" fill="#ff3b1f"/>
+          <path d="M18 16.5 L30 16.5 C32.5 16.5 34 18.5 34.2 21 L35.5 38 C35.8 42.5 12.2 42.5 12.5 38 L13.8 21 C14 18.5 15.5 16.5 18 16.5 Z" fill="#ff3b1f"/>
+          <path d="M11 15 L36 36.5" stroke="#0d1117" stroke-width="9" stroke-linecap="round"/>
+          <path d="M11.5 15.5 L35.5 36" stroke="#ff3b1f" stroke-width="5" stroke-linecap="round"/>
+        </svg>
+      </div>
+
+      <div class="telltale amber" id="tt-engine" title="Check engine">
+        <svg viewBox="0 0 48 48" fill="#ffb300">
+          <path d="M14 16h8v-3h8v3h4l4 5h4v-4h4v16h-4v-4h-3l-5 6H18l-4-4h-4v4H6V18h4v4h4v-6z"/>
+        </svg>
+      </div>
+
+      <div class="telltale red" id="tt-battery" title="Battery">
+        <svg viewBox="0 0 48 48" fill="#ff3b1f">
+          <path d="M6 14h8v-4h6v4h8v-4h6v4h8v24H6V14zm6 12h8v-3h-8v3zm18 0h3v-3h3v-3h-3v-3h-3v3h-3v3h3v3z" fill-rule="evenodd"/>
+        </svg>
+      </div>
+
+      <div class="telltale blue" id="tt-lights" title="Headlights">
+        <svg viewBox="0 0 48 48" fill="#3aa7ff">
+          <path d="M20 12c6 0 10 5 10 12s-4 12-10 12c-4 0-7-2-8-5V17c1-3 4-5 8-5z"/>
+          <rect x="34" y="14" width="10" height="3" rx="1.5" transform="rotate(8 34 14)"/>
+          <rect x="34" y="22" width="10" height="3" rx="1.5"/>
+          <rect x="34" y="30" width="10" height="3" rx="1.5" transform="rotate(-8 34 30)"/>
+        </svg>
+      </div>
+
+      <div class="telltale amber" id="tt-cpd" title="Child presence detected">
+        <svg viewBox="0 0 300 300">
+          <path d="M 43 54 C 38 35, 58 28, 67 48 L 111 205 C 114 216, 123 222, 135 222 L 213 222 C 231 222, 241 233, 240 249 L 239 261 C 238 272, 230 278, 219 278 L 87 278 C 76 278, 69 271, 66 261 Z" fill="#FFB632"/>
+          <circle cx="105" cy="238" r="17" fill="#0d1117"/>
+          <circle cx="124" cy="62" r="36" fill="#FFB632"/>
+          <path d="M 111 109 C 118 103, 129 103, 139 107 C 149 111, 158 117, 168 120 L 204 115 C 216 113, 224 119, 225 129 C 226 138, 219 145, 210 147 L 177 151 L 181 166 L 215 165 C 226 165, 233 170, 238 178 L 276 211 C 284 218, 283 230, 276 237 C 268 244, 258 242, 251 236 L 218 207 C 212 201, 205 198, 197 198 L 151 198 C 137 198, 127 192, 123 180 L 107 135 C 103 124, 103 115, 111 109 Z" fill="#FFB632"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="center">
+      <div class="gauge-side">
+        <div class="value" id="fuel-val">72%</div>
+        <div class="bar bar-fuel"><i></i></div>
+        FUEL
+      </div>
+
+      <div class="speed">
+        <div class="num" id="speed-num">0</div>
+        <div class="unit">km/h</div>
+        <div class="gear">P</div>
+      </div>
+
+      <div class="gauge-side">
+        <div class="value">25°C</div>
+        <div class="bar bar-temp"><i></i></div>
+        TEMP
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="cpd-status">
+        <div class="cpd-dot" id="cpd-dot"></div>
+        <span id="cpd-label">CPD: NO OCCUPANT</span>
+      </div>
+      <div id="clock">--:--</div>
+      <div>ODO 12 481 km</div>
+    </div>
+
+    <div class="escalation" id="escalation" role="alert">
+      <div class="esc-frame"></div>
+      <div class="esc-led"></div>
+      <svg class="esc-batt" width="30" height="16" viewBox="0 0 30 16" fill="none">
+        <rect x="1" y="1" width="25" height="14" rx="2" stroke="#ff3b1f" stroke-width="2"/>
+        <rect x="27" y="5" width="3" height="6" rx="1" fill="#ff3b1f"/>
+        <rect x="4" y="4" width="10" height="8" fill="#ff3b1f"/>
+      </svg>
+
+      <div class="hazard top"></div>
+
+      <div class="esc-body">
+        <div class="esc-icon">
+          <svg viewBox="0 0 300 300">
+            <path d="M 43 54 C 38 35, 58 28, 67 48 L 111 205 C 114 216, 123 222, 135 222 L 213 222 C 231 222, 241 233, 240 249 L 239 261 C 238 272, 230 278, 219 278 L 87 278 C 76 278, 69 271, 66 261 Z" fill="#FFB632"/>
+            <circle cx="105" cy="238" r="17" fill="#050302"/>
+            <circle cx="124" cy="62" r="36" fill="#FFB632"/>
+            <path d="M 111 109 C 118 103, 129 103, 139 107 C 149 111, 158 117, 168 120 L 204 115 C 216 113, 224 119, 225 129 C 226 138, 219 145, 210 147 L 177 151 L 181 166 L 215 165 C 226 165, 233 170, 238 178 L 276 211 C 284 218, 283 230, 276 237 C 268 244, 258 242, 251 236 L 218 207 C 212 201, 205 198, 197 198 L 151 198 C 137 198, 127 192, 123 180 L 107 135 C 103 124, 103 115, 111 109 Z" fill="#FFB632"/>
+          </svg>
+        </div>
+
+        <div class="esc-text">Check<br>Rear Seat</div>
+
+        <div class="esc-icon">
+          <svg viewBox="0 0 48 48" fill="#ffb300">
+            <circle cx="16" cy="12" r="6"/>
+            <path d="M12 20c-3 0-5 2.5-5 5.5V42h8V28h4l6 14h8l-7-16c-1-2.5-3-6-7-6h-7z"/>
+            <circle cx="34" cy="14" r="8" opacity="0.95"/>
+            <path d="M40 24l4 4-3 3-4-4z" opacity="0.95"/>
+            <path d="M43 12l4-2M44 17h5M42 8l3-4" stroke="#ffb300" stroke-width="2.4" stroke-linecap="round"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="hazard bottom"></div>
+    </div>
+  </div>
+
+<script>
+/**
+ * Child Present Detection — production HMI (no on-screen simulator).
+ *
+ * External control API (RemotiveLabs Topology bridge / native Intent):
+ *
+ *   CPD.setState(1) | CPD.setState('detected')     // 1. Child Detected (+ optional sound)
+ *   CPD.setState(2) | CPD.setState('escalation')   // 2. Escalation   (+ optional sound)
+ *   CPD.setState(0) | CPD.setState(3) | 'none'     // 0/3. None
+ *
+ *   CPD.setState(1, { sound: true })
+ *   CPD.childDetected({ sound: true })
+ *
+ * adb:
+ *   am start -n com.emtek.cpd/.MainActivity -a com.emtek.cpd.SET_STATE --ei state 1 --ez sound true
+ */
+(function () {
+  const STATES = {
+    0: 'none',
+    1: 'detected',
+    2: 'escalation',
+    3: 'none',
+    detected: 'detected',
+    escalation: 'escalation',
+    none: 'none',
+    alert: 'escalation',
+    clear: 'none'
+  };
+
+  const LABELS = {
+    none: 'CPD: NO OCCUPANT',
+    detected: 'CPD: CHILD DETECTED',
+    escalation: 'CPD: ⚠ ALERT — CHECK REAR SEAT'
+  };
+
+  const escalation = document.getElementById('escalation');
+  const ttCpd = document.getElementById('tt-cpd');
+  const cpdDot = document.getElementById('cpd-dot');
+  const cpdLabel = document.getElementById('cpd-label');
+
+  let state = 'none';
+  let audioCtx = null;
+  let beepTimer = null;
+
+  function normalize(next) {
+    if (typeof next === 'number' && !isNaN(next)) next = String(Math.trunc(next));
+    if (typeof next === 'string') next = next.trim().toLowerCase();
+    return STATES[next] || null;
+  }
+
+  function beep() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const t = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(state === 'escalation' ? 1400 : 980, t);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.14, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t);
+      osc.stop(t + 0.28);
+    } catch (_) { /* autoplay / audio may be blocked */ }
+  }
+
+  function stopBeeping() {
+    if (beepTimer) { clearInterval(beepTimer); beepTimer = null; }
+  }
+
+  function startBeeping(continuous) {
+    stopBeeping();
+    beep();
+    if (continuous) beepTimer = setInterval(beep, 700);
+  }
+
+  /**
+   * @param {0|1|2|3|'detected'|'escalation'|'none'|'alert'|'clear'} next
+   * @param {{sound?: boolean}|boolean} [opts]
+   */
+  function setState(next, opts) {
+    const s = normalize(next);
+    if (!s) {
+      console.warn('[CPD] setState ignored, bad value:', next);
+      return false;
+    }
+    state = s;
+
+    let wantSound = false;
+    if (typeof opts === 'boolean') wantSound = opts;
+    else if (opts && typeof opts === 'object' && opts.sound) wantSound = true;
+
+    const active = state !== 'none';
+    ttCpd.classList.toggle('on', active);
+    ttCpd.classList.toggle('blink', active);
+
+    escalation.classList.toggle('show', state === 'escalation');
+
+    cpdDot.className = 'cpd-dot' + (active ? ' ' + state : '');
+    cpdLabel.textContent = LABELS[state];
+
+    if (!wantSound || state === 'none') {
+      stopBeeping();
+    } else if (state === 'escalation') {
+      startBeeping(true);
+    } else if (state === 'detected') {
+      startBeeping(false); // one-shot chime
+    }
+
+    console.log('[CPD] state →', state, 'sound=', wantSound);
+    return true;
+  }
+
+  function getState() { return state; }
+
+  function getStateCode() {
+    return state === 'detected' ? 1 : state === 'escalation' ? 2 : 0;
+  }
+
+  /* Ambient cluster life (display only) */
+  const speedNum = document.getElementById('speed-num');
+  let speed = 0, target = 0;
+  setInterval(() => { target = Math.random() < 0.3 ? 0 : 30 + Math.random() * 60; }, 6000);
+  setInterval(() => {
+    speed += (target - speed) * 0.05;
+    speedNum.textContent = String(Math.round(speed));
+  }, 100);
+
+  const clock = document.getElementById('clock');
+  function tick() {
+    const d = new Date();
+    clock.textContent =
+      String(d.getHours()).padStart(2, '0') + ':' +
+      String(d.getMinutes()).padStart(2, '0');
+  }
+  tick();
+  setInterval(tick, 10000);
+
+  document.getElementById('tt-seatbelt').classList.add('on');
+  setTimeout(() => document.getElementById('tt-seatbelt').classList.remove('on'), 5000);
+
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'cpd' && e.data.state != null) {
+      setState(e.data.state, { sound: !!e.data.sound });
+    }
+  });
+
+  window.CPD = {
+    setState,
+    getState,
+    getStateCode,
+    childDetected: (opts) => setState(1, opts),
+    escalation: (opts) => setState(2, opts),
+    none: () => setState(0),
+    STATES: Object.freeze({ NONE: 0, DETECTED: 1, ESCALATION: 2 })
+  };
+
+  setState(0);
+})();
+</script>
+</body>
+</html>

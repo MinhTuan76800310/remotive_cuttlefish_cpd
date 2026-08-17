@@ -1,0 +1,100 @@
+# Two services:
+#   1) cuttlefish  — AAOS guest with Child Present Detection app (WebRTC :8443)
+#   2) bridge      — Remotive Topology → CPD Intent bridge (reads bridge/config.yaml)
+#
+# Build images locally:
+#   ./scripts/build-images.sh
+#   # or: docker compose build
+#
+# Start:
+#   docker compose up -d
+#
+# Pull pre-built images from GHCR (after CI):
+#   export CUTTLEFISH_IMAGE=ghcr.io/<owner>/remotive_cuttlefish_cpd/cpd-cuttlefish:latest
+#   export BRIDGE_IMAGE=ghcr.io/<owner>/remotive_cuttlefish_cpd/cpd-remotive-bridge:latest
+#   docker compose pull && docker compose up -d
+#
+# Remotive broker (psw-bench01 topology) must already be running on the host,
+# default http://127.0.0.1:50130. The bridge uses host networking so it can
+# reach both the broker (127.0.0.1:50130) and Cuttlefish ADB (127.0.0.1:6520).
+
+services:
+  cuttlefish:
+    image: ${CUTTLEFISH_IMAGE:-cpd-cuttlefish:latest}
+    build:
+      context: .
+      dockerfile: cuttlefish/Dockerfile
+      args:
+        BASE_IMAGE: ${CUTTLEFISH_BASE_IMAGE:-remotivelabs/remotivelabs-cuttlefish:15.0.0-4}
+    container_name: cpd-cuttlefish
+    init: true
+    privileged: true
+    restart: unless-stopped
+    ports:
+      - "1443:1443"
+      - "6520:6520"
+      - "8443:8443"
+      - "9300:9300"
+    volumes:
+      # Optional overrides (image already bakes init.sh + APK)
+      - ./cuttlefish/init.sh:/root/init.sh:ro
+      - ./cuttlefish/apks:/root/apks
+      - cpd-cf-state:/root/state
+    environment:
+      - CUTTLEFISH_MEMORY_MB=${CUTTLEFISH_MEMORY_MB:-4096}
+      - CUTTLEFISH_CPUS=${CUTTLEFISH_CPUS:-4}
+      - CUTTLEFISH_GPU_MODE=${CUTTLEFISH_GPU_MODE:-auto}
+      - CPD_PACKAGE=com.emtek.cpd
+      - CPD_ACTIVITY=.MainActivity
+    healthcheck:
+      test: ["CMD-SHELL", "ss -ltn 2>/dev/null | grep -q ':8443' || nc -z localhost 8443"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 180s
+
+  bridge:
+    image: ${BRIDGE_IMAGE:-cpd-remotive-bridge:latest}
+    build:
+      context: ./bridge
+      dockerfile: Dockerfile
+    container_name: cpd-bridge
+    restart: unless-stopped
+    # Host network: Remotive topology broker binds 127.0.0.1:50130 and
+    # Cuttlefish ADB is published on host :6520.
+    network_mode: host
+    depends_on:
+      cuttlefish:
+        condition: service_started
+    volumes:
+      - ./bridge/config.yaml:/config/config.yaml:ro
+    environment:
+      - BRIDGE_CONFIG=/config/config.yaml
+      - REMOTIVE_BROKER_URL=${REMOTIVE_BROKER_URL:-http://127.0.0.1:50130}
+      - CUTTLEFISH_ADB=${CUTTLEFISH_ADB:-127.0.0.1:6520}
+      - REMOTIVE_NAMESPACE=${REMOTIVE_NAMESPACE:-topology-BodyCAN}
+      - REMOTIVE_BROKER_API_KEY=${REMOTIVE_BROKER_API_KEY:-}
+    # Wait until ADB port is open before starting the Python loop (best-effort)
+    command:
+      - /bin/sh
+      - -c
+      - |
+        echo "cpd-bridge: waiting for Cuttlefish ADB on $${CUTTLEFISH_ADB:-127.0.0.1:6520}…"
+        host=$${CUTTLEFISH_ADB%-*}
+        host=$${host%%:*}
+        port=$${CUTTLEFISH_ADB##*:}
+        host=$${host:-127.0.0.1}
+        port=$${port:-6520}
+        i=0
+        while [ $$i -lt 120 ]; do
+          if (echo > /dev/tcp/$$host/$$port) >/dev/null 2>&1; then
+            echo "cpd-bridge: ADB port open"
+            break
+          fi
+          i=$$((i+1))
+          sleep 2
+        done
+        exec python -u /app/main.py -c /config/config.yaml
+
+volumes:
+  cpd-cf-state:

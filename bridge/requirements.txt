@@ -1,0 +1,4 @@
+remotivelabs-broker>=0.9.1,<1
+PyYAML>=6.0
+grpcio>=1.60
+protobuf>=4.25

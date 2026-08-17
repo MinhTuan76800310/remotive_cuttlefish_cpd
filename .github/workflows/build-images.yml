@@ -1,0 +1,159 @@
+# Build & publish the two runtime images:
+#   1) cpd-cuttlefish        — AAOS Cuttlefish with Child Present Detection APK
+#   2) cpd-remotive-bridge   — Remotive Topology → CPD bridge
+#
+# Triggers: push to main/master, tags v*, PRs (build only), manual dispatch.
+# Registry: GitHub Container Registry (ghcr.io/<owner>/<repo>/...)
+
+name: Build images
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  CUTTLEFISH_BASE_IMAGE: remotivelabs/remotivelabs-cuttlefish:15.0.0-4
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Build CPD APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build APK (Docker Android SDK)
+        run: ./scripts/build-apk.sh
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: child-present-detection-apk
+          path: cuttlefish/apks/ChildPresentDetection.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  build-and-push:
+    name: Build & push Docker images
+    needs: build-apk
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: child-present-detection-apk
+          path: cuttlefish/apks
+
+      - name: Verify APK present
+        run: |
+          ls -lh cuttlefish/apks/ChildPresentDetection.apk
+          test -s cuttlefish/apks/ChildPresentDetection.apk
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image name prefix
+        id: meta
+        run: |
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO_LC=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          echo "prefix=${{ env.REGISTRY }}/${OWNER_LC}/${REPO_LC}" >> "$GITHUB_OUTPUT"
+          # short sha tag
+          echo "sha=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Docker meta (cuttlefish)
+        id: meta_cf
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.meta.outputs.prefix }}/cpd-cuttlefish
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=ref,event=pr
+
+      - name: Docker meta (bridge)
+        id: meta_br
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.meta.outputs.prefix }}/cpd-remotive-bridge
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=ref,event=pr
+
+      - name: Build & push cpd-cuttlefish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: cuttlefish/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta_cf.outputs.tags }}
+          labels: ${{ steps.meta_cf.outputs.labels }}
+          build-args: |
+            BASE_IMAGE=${{ env.CUTTLEFISH_BASE_IMAGE }}
+          cache-from: type=gha,scope=cpd-cuttlefish
+          cache-to: type=gha,mode=max,scope=cpd-cuttlefish
+          # Base AAOS image is large; give pull time
+          provenance: false
+
+      - name: Build & push cpd-remotive-bridge
+        uses: docker/build-push-action@v6
+        with:
+          context: bridge
+          file: bridge/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta_br.outputs.tags }}
+          labels: ${{ steps.meta_br.outputs.labels }}
+          cache-from: type=gha,scope=cpd-bridge
+          cache-to: type=gha,mode=max,scope=cpd-bridge
+          provenance: false
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Images"
+            echo ""
+            echo "| Image | Tags |"
+            echo "|-------|------|"
+            echo "| cpd-cuttlefish | \`${{ steps.meta.outputs.prefix }}/cpd-cuttlefish\` |"
+            echo "| cpd-remotive-bridge | \`${{ steps.meta.outputs.prefix }}/cpd-remotive-bridge\` |"
+            echo ""
+            echo "Push enabled: \`${{ github.event_name != 'pull_request' }}\`"
+            echo "APK: \`cuttlefish/apks/ChildPresentDetection.apk\`"
+          } >> "$GITHUB_STEP_SUMMARY"

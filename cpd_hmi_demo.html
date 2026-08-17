@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CPD HMI Demo</title>
+<style>
+  :root{
+    --bg:#080a0c;
+    --panel:#11161b;
+    --panel2:#0b0f13;
+    --text:#ffd36b;
+    --muted:#8d969f;
+    --red:#ff3f35;
+    --orange:#ff8a2a;
+    --green:#67e08a;
+    --cyan:#72d9ff;
+    --line:#343c44;
+    --glow:0 0 8px currentColor,0 0 18px rgba(255,80,45,.35);
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#050607;color:white;font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;overflow:hidden}
+  body{display:grid;place-items:center}
+
+  .hmi{
+    width:min(96vw,1280px);
+    aspect-ratio:16/9;
+    position:relative;
+    border-radius:36px;
+    background:
+      radial-gradient(circle at 50% 42%, rgba(255,83,48,.10), transparent 34%),
+      linear-gradient(145deg,#0d1115,#050607 55%,#0a0d10);
+    border:12px solid #23292f;
+    box-shadow:
+      0 30px 80px rgba(0,0,0,.65),
+      inset 0 0 0 2px #08090a,
+      inset 0 0 60px rgba(255,255,255,.025);
+    padding:28px;
+  }
+
+  .bezel-dot{
+    position:absolute; left:16px; top:50%; transform:translateY(-50%);
+    width:14px;height:14px;border-radius:50%;
+    background:var(--red);
+    box-shadow:0 0 15px var(--red),0 0 30px rgba(255,63,53,.75);
+  }
+
+  .screen{
+    height:100%;
+    border-radius:24px;
+    background:
+      linear-gradient(rgba(255,255,255,.015),rgba(255,255,255,.005)),
+      #090c0f;
+    position:relative;
+    overflow:hidden;
+    border:1px solid #2d3339;
+  }
+
+  .screen:before{
+    content:"";
+    position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,.018) 0,
+      rgba(255,255,255,.018) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+    opacity:.38;
+  }
+
+  .frame{
+    position:absolute; inset:26px;
+    border:3px solid var(--accent);
+    clip-path:polygon(4% 0,24% 0,26% 3%,60% 3%,63% 0,92% 0,100% 9%,100% 86%,95% 100%,61% 100%,58% 96%,20% 96%,17% 100%,0 92%,0 11%);
+    box-shadow:inset 0 0 18px color-mix(in srgb,var(--accent) 28%,transparent);
+    transition:.3s ease;
+  }
+
+  .hazard{
+    position:absolute;left:54px;right:54px;height:42px;
+    display:flex;gap:12px;overflow:hidden;
+    opacity:.9;
+  }
+  .hazard.top{top:66px}
+  .hazard.bottom{bottom:62px}
+  .hazard span{
+    flex:1;
+    min-width:42px;
+    transform:skewX(-28deg);
+    background:var(--accent);
+    box-shadow:var(--glow);
+    opacity:.9;
+  }
+
+  .topbar{
+    position:absolute;top:22px;left:44px;right:44px;
+    display:flex;justify-content:space-between;align-items:center;
+    font-size:14px;letter-spacing:.16em;color:#c7cbd0;
+  }
+  .brand{font-weight:800}
+  .battery{
+    width:42px;height:18px;border:2px solid #cdd1d5;border-radius:3px;position:relative;
+  }
+  .battery:after{
+    content:"";position:absolute;right:-5px;top:4px;width:3px;height:7px;background:#cdd1d5;border-radius:1px;
+  }
+  .battery .level{height:100%;width:74%;background:#cdd1d5}
+
+  .content{
+    position:absolute;inset:145px 58px 145px 58px;
+    display:grid;
+    grid-template-columns:1fr 2.2fr 1fr;
+    align-items:center;
+    gap:30px;
+  }
+
+  .iconbox{
+    display:grid;place-items:center;
+    color:var(--accent);
+    filter:drop-shadow(0 0 8px color-mix(in srgb,var(--accent) 65%,transparent));
+  }
+
+  svg{width:120px;height:120px;stroke:currentColor;fill:none;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+
+  .main{
+    text-align:center;align-self:stretch;display:flex;flex-direction:column;justify-content:center;
+    border-top:2px solid color-mix(in srgb,var(--accent) 55%,#252525);
+    border-bottom:2px solid color-mix(in srgb,var(--accent) 55%,#252525);
+    padding:10px 18px;
+  }
+  .eyebrow{
+    color:#aeb6bd;
+    font-size:14px;
+    letter-spacing:.22em;
+    text-transform:uppercase;
+    margin-bottom:12px;
+  }
+  .title{
+    color:var(--textColor);
+    font-weight:900;
+    font-size:clamp(30px,4vw,58px);
+    line-height:.96;
+    letter-spacing:.02em;
+    text-shadow:0 0 10px color-mix(in srgb,var(--textColor) 25%,transparent);
+  }
+  .subtitle{
+    margin-top:18px;
+    color:#c8cdd2;
+    font-size:clamp(14px,1.45vw,20px);
+    line-height:1.35;
+  }
+
+  .statusbar{
+    position:absolute;left:52px;right:52px;bottom:14px;
+    display:flex;justify-content:space-between;align-items:center;
+    color:#77818a;font-size:12px;letter-spacing:.08em;
+  }
+  .sig{display:flex;gap:16px;align-items:center}
+  .pill{
+    padding:5px 9px;border:1px solid #303740;border-radius:999px;
+    color:#98a2ab;background:#0a0d10;
+  }
+  .pill b{color:#d8dde1}
+
+  .controls{
+    position:fixed;left:50%;bottom:18px;transform:translateX(-50%);
+    display:flex;gap:8px;flex-wrap:wrap;justify-content:center;
+    max-width:94vw;
+    background:rgba(8,10,12,.88);
+    backdrop-filter:blur(10px);
+    border:1px solid #2d3339;
+    border-radius:16px;
+    padding:10px;
+    box-shadow:0 12px 35px rgba(0,0,0,.45);
+  }
+  button{
+    border:1px solid #343b42;
+    background:#151a1f;
+    color:#d6dbe0;
+    border-radius:10px;
+    padding:9px 12px;
+    cursor:pointer;
+    font:600 12px/1 Inter,Segoe UI,sans-serif;
+  }
+  button:hover{background:#20262c}
+  button.active{border-color:var(--accent);color:white;box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent)}
+  .auto{margin-left:4px}
+
+  .pulse{animation:pulse 1.05s ease-in-out infinite}
+  .blink{animation:blink .6s steps(1,end) infinite}
+  @keyframes pulse{50%{opacity:.42;filter:brightness(1.45)}}
+  @keyframes blink{50%{opacity:.18}}
+
+  .corner-label{
+    position:absolute;right:42px;bottom:42px;
+    color:#5c646b;font-size:11px;letter-spacing:.16em;
+  }
+
+  @media(max-width:760px){
+    .content{grid-template-columns:.7fr 2.3fr .7fr;gap:10px;inset:120px 30px 120px}
+    svg{width:78px;height:78px}
+    .hazard{left:32px;right:32px;height:28px}
+    .hazard.top{top:58px}.hazard.bottom{bottom:52px}
+    .title{font-size:32px}
+    .subtitle{font-size:13px}
+    .statusbar{display:none}
+  }
+</style>
+</head>
+<body>
+  <div class="hmi" id="hmi">
+    <div class="bezel-dot" id="bezelDot"></div>
+    <div class="screen">
+      <div class="frame"></div>
+
+      <div class="topbar">
+        <div class="brand">CPD · CABIN SAFETY</div>
+        <div style="display:flex;gap:12px;align-items:center">
+          <span id="clock">14:32</span>
+          <div class="battery"><div class="level"></div></div>
+        </div>
+      </div>
+
+      <div class="hazard top" id="hazardTop"></div>
+      <div class="hazard bottom" id="hazardBottom"></div>
+
+      <div class="content">
+        <div class="iconbox" id="leftIcon">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <circle cx="38" cy="28" r="10"/>
+            <path d="M35 40v25l17 14"/>
+            <path d="M55 76h20l9 23"/>
+            <path d="M21 52v39h56"/>
+            <path d="M23 52h15l14 26"/>
+            <path d="M82 50c8 2 14 9 14 17"/>
+            <path d="M88 47c11 4 18 13 19 25"/>
+          </svg>
+        </div>
+
+        <div class="main">
+          <div class="eyebrow" id="eyebrow">Rear occupant reminder</div>
+          <div class="title" id="title">CHECK<br>REAR SEAT</div>
+          <div class="subtitle" id="subtitle">Vehicle switched off · rear occupancy event recorded</div>
+        </div>
+
+        <div class="iconbox" id="rightIcon">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <circle cx="64" cy="37" r="11"/>
+            <path d="M55 50c-8 7-12 18-11 32"/>
+            <path d="M44 82h25l8 20"/>
+            <path d="M63 61l19 8"/>
+            <path d="M82 69l8 22"/>
+            <circle cx="91" cy="50" r="6"/>
+            <path d="M98 48l10-5"/>
+            <path d="M98 54l11 4"/>
+            <path d="M88 43l1-11"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="statusbar">
+        <div class="sig">
+          <span class="pill">Occupancy <b id="occ">RECORDED</b></span>
+          <span class="pill">Power <b id="power">OFF</b></span>
+          <span class="pill">Doors <b id="doors">CLOSED</b></span>
+        </div>
+        <div class="sig">
+          <span class="pill">Horn <b id="horn">OFF</b></span>
+          <span class="pill">Hazard <b id="hazard">OFF</b></span>
+        </div>
+      </div>
+
+      <div class="corner-label">DEMO HMI · CPD</div>
+    </div>
+  </div>
+
+  <div class="controls" id="controls"></div>
+
+<script>
+const states = [
+  {
+    id:"ready", label:"1 · Ready",
+    accent:"#67e08a", text:"#dfffe8",
+    eyebrow:"Child Present Detection",
+    title:"SYSTEM<br>READY",
+    subtitle:"Rear cabin sensing available",
+    occ:"EMPTY", power:"ON", doors:"CLOSED", horn:"OFF", hazard:"OFF",
+    pulse:false, blink:false
+  },
+  {
+    id:"monitor", label:"2 · Monitoring",
+    accent:"#72d9ff", text:"#e7f9ff",
+    eyebrow:"Rear cabin monitoring",
+    title:"CHILD<br>DETECTED",
+    subtitle:"Occupant monitored while vehicle is active",
+    occ:"CHILD", power:"ON", doors:"CLOSED", horn:"OFF", hazard:"OFF",
+    pulse:false, blink:false
+  },
+  {
+    id:"reminder", label:"3 · Check rear seat",
+    accent:"#ff6b37", text:"#ffd36b",
+    eyebrow:"Rear occupant reminder",
+    title:"CHECK<br>REAR SEAT",
+    subtitle:"Vehicle switched off · rear occupancy event recorded",
+    occ:"RECORDED", power:"OFF", doors:"CLOSED", horn:"OFF", hazard:"OFF",
+    pulse:true, blink:false
+  },
+  {
+    id:"warning", label:"4 · Child remains",
+    accent:"#ff453a", text:"#ffd36b",
+    eyebrow:"CPD warning",
+    title:"CHILD STILL<br>IN VEHICLE",
+    subtitle:"Return to vehicle and check rear seat immediately",
+    occ:"CHILD", power:"OFF", doors:"LOCKED", horn:"OFF", hazard:"ON",
+    pulse:true, blink:true
+  },
+  {
+    id:"critical", label:"5 · Critical",
+    accent:"#ff2d23", text:"#fff0a8",
+    eyebrow:"Critical child presence alert",
+    title:"CHILD<br>DETECTED",
+    subtitle:"Horn and hazard warning active · immediate action required",
+    occ:"CHILD", power:"OFF", doors:"LOCKED", horn:"ON", hazard:"ON",
+    pulse:true, blink:true
+  },
+  {
+    id:"cleared", label:"6 · Cleared",
+    accent:"#67e08a", text:"#dfffe8",
+    eyebrow:"CPD status",
+    title:"REAR SEAT<br>CLEAR",
+    subtitle:"No child detected · alert sequence ended",
+    occ:"EMPTY", power:"OFF", doors:"OPEN", horn:"OFF", hazard:"OFF",
+    pulse:false, blink:false
+  }
+];
+
+const $ = id => document.getElementById(id);
+const hazardTop = $("hazardTop"), hazardBottom = $("hazardBottom");
+for(let i=0;i<13;i++){
+  hazardTop.appendChild(document.createElement("span"));
+  hazardBottom.appendChild(document.createElement("span"));
+}
+
+const controls = $("controls");
+states.forEach((s,i)=>{
+  const b=document.createElement("button");
+  b.textContent=s.label;
+  b.onclick=()=>setState(i);
+  b.dataset.i=i;
+  controls.appendChild(b);
+});
+const autoBtn=document.createElement("button");
+autoBtn.textContent="▶ Auto demo";
+autoBtn.className="auto";
+controls.appendChild(autoBtn);
+
+let current=2, timer=null;
+function setState(i){
+  current=i;
+  const s=states[i];
+  document.documentElement.style.setProperty("--accent",s.accent);
+  document.documentElement.style.setProperty("--textColor",s.text);
+  $("eyebrow").textContent=s.eyebrow;
+  $("title").innerHTML=s.title;
+  $("subtitle").textContent=s.subtitle;
+  $("occ").textContent=s.occ;
+  $("power").textContent=s.power;
+  $("doors").textContent=s.doors;
+  $("horn").textContent=s.horn;
+  $("hazard").textContent=s.hazard;
+
+  const frame=document.querySelector(".frame");
+  const li=$("leftIcon"), ri=$("rightIcon");
+  const hz=[hazardTop,hazardBottom];
+  [frame,li,ri,...hz].forEach(el=>el.classList.remove("pulse","blink"));
+  if(s.pulse){ frame.classList.add("pulse"); li.classList.add("pulse"); ri.classList.add("pulse"); }
+  if(s.blink){ hz.forEach(el=>el.classList.add("blink")); $("bezelDot").classList.add("blink"); }
+  else $("bezelDot").classList.remove("blink");
+
+  document.querySelectorAll("button[data-i]").forEach((b,idx)=>b.classList.toggle("active",idx===i));
+}
+
+autoBtn.onclick=()=>{
+  if(timer){
+    clearInterval(timer); timer=null; autoBtn.textContent="▶ Auto demo"; return;
+  }
+  autoBtn.textContent="■ Stop demo";
+  timer=setInterval(()=>setState((current+1)%states.length),2600);
+};
+
+document.addEventListener("keydown",e=>{
+  if(e.key>="1"&&e.key<="6") setState(Number(e.key)-1);
+  if(e.key===" ") { e.preventDefault(); autoBtn.click(); }
+});
+
+function updateClock(){
+  const d=new Date();
+  $("clock").textContent=d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+}
+updateClock(); setInterval(updateClock,30000);
+setState(2);
+</script>
+</body>
+</html>

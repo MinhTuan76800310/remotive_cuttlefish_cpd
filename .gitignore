@@ -1,0 +1,40 @@
+# Android / Gradle
+app/**/.gradle/
+app/**/build/
+app/**/local.properties
+app/**/*.iml
+app/**/.idea/
+*.apk.idsig
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Docker / local overrides
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vscode/
+.idea/
+
+# Session / local tooling (not part of the product)
+.claude/
+.remember/
+.grok/
+
+# Large local screenshots (keep demo HTML; drop binary dumps)
+cpd_screen.png
+cpd_screen_preview.png
+
+# Optional: keep built APK in repo for offline compose; CI rebuilds it.
+# Uncomment the next line if you prefer not to track the APK:
+# cuttlefish/apks/*.apk

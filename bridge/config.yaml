@@ -1,0 +1,49 @@
+# RemotiveLabs Topology → Child Present Detection bridge
+# Mount / edit this file to point at your running broker and Cuttlefish.
+
+remotive:
+  # gRPC URL of the topology broker (host-mapped port of topology-broker.com)
+  broker_url: "http://127.0.0.1:50130"
+  # Optional cloud API key (leave empty for local brokers)
+  api_key: ""
+  # CAN namespace that carries OpenDoorMsg (psw-bench01: topology-BodyCAN)
+  namespace: "topology-BodyCAN"
+  # Signal names (frame.field) on that namespace
+  door_cmd_signal: "OpenDoorMsg.Door_Cmd"
+  door_target_signal: "OpenDoorMsg.Door_Target"
+  # Only act when values change (reduces ADB spam on restbus cycle)
+  on_change: true
+
+cuttlefish:
+  # ADB serial / host:port of the Cuttlefish guest
+  adb_serial: "127.0.0.1:6520"
+  # Path to adb binary inside the bridge container
+  adb_path: "adb"
+  package: "com.emtek.cpd"
+  activity: "com.emtek.cpd/.MainActivity"
+  # Intent action delivered to MainActivity
+  intent_action: "com.emtek.cpd.SET_STATE"
+  # Seconds between ADB reconnect attempts when device is offline
+  reconnect_interval_s: 5
+  # Debounce: minimum seconds between identical SET_STATE intents
+  min_intent_interval_s: 0.3
+
+# Hardcoded mapping (OpenDoorMsg):
+#   Door_Cmd=1 + Door_Target=1  → CPD state 1 + sound  (child detected)
+#   Door_Cmd=0 + Door_Target=0  → CPD state 0          (none)
+#   Door_Cmd=1 + Door_Target=0  → CPD state 2 + sound  (escalation)
+# Any other combination keeps the last applied state.
+mapping:
+  rules:
+    - door_cmd: 1
+      door_target: 1
+      cpd_state: 1
+      sound: true
+    - door_cmd: 0
+      door_target: 0
+      cpd_state: 0
+      sound: false
+    - door_cmd: 1
+      door_target: 0
+      cpd_state: 2
+      sound: true
