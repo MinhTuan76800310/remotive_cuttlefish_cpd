@@ -4,6 +4,11 @@
 #
 # Triggers: push to main/master, tags v*, PRs (build only), manual dispatch.
 # Registry: GitHub Container Registry (ghcr.io/<owner>/<repo>/...)
+#
+# Note on "Canceling since a higher priority waiting request…":
+#   That is expected when you push again while a run is still going.
+#   concurrency.cancel-in-progress drops the old run so only the latest commit builds.
+#   It is NOT a compile/docker failure.
 
 name: Build images
 
@@ -23,20 +28,24 @@ permissions:
   contents: read
   packages: write
 
+# One active build per branch/tag. Newer push cancels the older run (by design).
 concurrency:
-  group: build-images-${{ github.ref }}
+  group: build-images-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-apk:
     name: Build CPD APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Build APK (Docker Android SDK)
-        run: ./scripts/build-apk.sh
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/build-apk.sh
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -50,9 +59,11 @@ jobs:
     name: Build & push Docker images
     needs: build-apk
     runs-on: ubuntu-latest
+    # Base AAOS image pull + layer build can be slow
+    timeout-minutes: 180
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download APK artifact
         uses: actions/download-artifact@v4
@@ -64,6 +75,14 @@ jobs:
         run: |
           ls -lh cuttlefish/apks/ChildPresentDetection.apk
           test -s cuttlefish/apks/ChildPresentDetection.apk
+
+      - name: Free disk space
+        run: |
+          # Cuttlefish base image is large; reclaim runner space proactively.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk \
+            /opt/ghc /usr/local/share/boost || true
+          docker system prune -af || true
+          df -h
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -82,7 +101,6 @@ jobs:
           OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           REPO_LC=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
           echo "prefix=${{ env.REGISTRY }}/${OWNER_LC}/${REPO_LC}" >> "$GITHUB_OUTPUT"
-          # short sha tag
           echo "sha=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
@@ -128,7 +146,6 @@ jobs:
             BASE_IMAGE=${{ env.CUTTLEFISH_BASE_IMAGE }}
           cache-from: type=gha,scope=cpd-cuttlefish
           cache-to: type=gha,mode=max,scope=cpd-cuttlefish
-          # Base AAOS image is large; give pull time
           provenance: false
 
       - name: Build & push cpd-remotive-bridge
@@ -155,5 +172,6 @@ jobs:
             echo "| cpd-remotive-bridge | \`${{ steps.meta.outputs.prefix }}/cpd-remotive-bridge\` |"
             echo ""
             echo "Push enabled: \`${{ github.event_name != 'pull_request' }}\`"
-            echo "APK: \`cuttlefish/apks/ChildPresentDetection.apk\`"
+            echo ""
+            echo "If an older run shows **cancelled**, that is normal when a newer commit was pushed while it was still building."
           } >> "$GITHUB_STEP_SUMMARY"
